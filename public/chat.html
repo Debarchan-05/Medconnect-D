@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat - MedConnect</title>
+  <link rel="stylesheet" href="/Medsty.css" />
+</head>
+<body>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="#" class="navbar-brand" id="dash-link">
+      <div class="brand-icon">MC</div><span>MedConnect</span>
+    </a>
+    <div class="navbar-right">
+      <div class="notif-btn">MSG</div>
+      <div class="avatar-btn">
+        <div class="avatar" id="nav-avatar">?</div>
+        <span class="avatar-name" id="nav-name">Loading...</span>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Navigation</div>
+      <a href="#" class="sidebar-link" id="sb-dash"><span class="sidebar-icon">DB</span> Dashboard</a>
+      <a href="/appointment" class="sidebar-link" id="sb-appt" style="display:none"><span class="sidebar-icon">AP</span> Appointments</a>
+      <a href="/documents" class="sidebar-link" id="sb-docs" style="display:none"><span class="sidebar-icon">DC</span> Documents</a>
+      <a href="/chat" class="sidebar-link active"><span class="sidebar-icon">CH</span> Messages</a>
+      <a href="/payment" class="sidebar-link" id="sb-pay" style="display:none"><span class="sidebar-icon">PY</span> Payments</a>
+      <a href="/prescription" class="sidebar-link" id="sb-rx" style="display:none"><span class="sidebar-icon">RX</span> Prescriptions</a>
+    </div>
+    <div class="sidebar-divider"></div>
+    <a href="#" class="sidebar-link" data-logout><span class="sidebar-icon">LO</span> Logout</a>
+  </aside>
+
+  <main class="main-content" style="padding:20px;height:calc(100vh - var(--navbar-h));display:flex;flex-direction:column;">
+    <div style="flex:1;min-height:0;">
+      <div class="chat-layout">
+        <div class="chat-list">
+          <div class="chat-list-header">
+            <div class="chat-list-title">Messages</div>
+            <button class="btn-add-contact" id="btn-add-contact" title="Add new contact">+</button>
+          </div>
+          <div class="chat-search-wrap">
+            <input type="text" class="chat-search-input" placeholder="Search conversations..." id="chat-search" />
+          </div>
+          <div class="chat-contacts" id="chat-contacts">
+            <div class="empty-state"><div class="emoji">...</div><p>Loading...</p></div>
+          </div>
+        </div>
+
+        <div class="chat-main">
+          <div class="chat-header" id="chat-header" style="display:none">
+            <div class="chat-header-left">
+              <div class="avatar" id="chat-header-avatar" style="width:42px;height:42px;font-size:0.9rem">?</div>
+              <div>
+                <div class="chat-header-name" id="chat-header-name">-</div>
+                <div class="chat-header-status" id="chat-header-status">&bull; Online</div>
+              </div>
+            </div>
+            <div class="chat-header-actions">
+              <button class="btn btn-outline btn-sm" onclick="MC.toast('Calling feature coming soon!','info')">Call</button>
+              <button class="btn btn-outline btn-sm" onclick="MC.toast('Video feature coming soon!','info')">Video</button>
+            </div>
+          </div>
+
+          <div class="chat-messages" id="chat-messages" style="flex:1; overflow-y:auto; display:flex; flex-direction:column;">
+            <div class="chat-empty">
+              <div class="icon">MSG</div>
+              <p>Select a conversation to start chatting</p>
+            </div>
+          </div>
+
+          <div class="chat-typing-indicator" id="chat-typing-indicator" style="display:none; padding:10px 15px; color:#999; font-size:0.9rem;">
+            <span id="typing-name"></span> is typing <span class="typing-dots">...</span>
+          </div>
+
+          <div class="chat-input-wrap" id="chat-input-wrap" style="display:none">
+            <input type="text" class="chat-input" id="chat-msg-input" placeholder="Type a message..." />
+            <button class="chat-send-btn" id="chat-send-btn">></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="add-contact-modal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Start New Conversation</h3>
+      <button class="modal-close" onclick="closeAddContactModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="search-users-wrap">
+        <input type="text" id="search-users-input" class="form-control" placeholder="Search by name or phone..." />
+        <div id="search-results" class="search-results">
+          <p style="text-align:center; color:#999;">Type to search...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" style="display:none;" onclick="closeAddContactModal()"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/utils.js"></script>
+<script>
+let currentUser = null;
+let socket = null;
+let activeContact = null;
+let allContacts = [];
+let allUsers = [];
+let pollInterval = null;
+let preselectedContactId = null;
+let typingTimeout = null;
+
+(async () => {
+  currentUser = await MC.requireAuth();
+  if (!currentUser) return;
+
+  document.getElementById('nav-name').textContent = currentUser.name;
+  document.getElementById('nav-avatar').textContent = currentUser.initials;
+
+  const dashHref = currentUser.role === 'doctor' ? '/doctor-dashboard' : '/patient-dashboard';
+  document.getElementById('dash-link').href = dashHref;
+  document.getElementById('sb-dash').href = dashHref;
+
+  if (currentUser.role === 'patient') {
+    document.getElementById('sb-appt').style.display = '';
+    document.getElementById('sb-docs').style.display = '';
+    document.getElementById('sb-pay').style.display = '';
+  } else {
+    document.getElementById('sb-rx').style.display = '';
+  }
+
+  const params = new URLSearchParams(location.search);
+  preselectedContactId = params.get('doctorId') || params.get('patientId');
+
+  connectSocket();
+  await loadContacts(true);
+  await openInitialChat();
+  startPolling();
+
+  document.getElementById('chat-search').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('.chat-contact').forEach((el) => {
+      el.style.display = el.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
+
+  document.getElementById('btn-add-contact').addEventListener('click', openAddContactModal);
+  document.getElementById('chat-send-btn').addEventListener('click', sendMessage);
+  document.getElementById('chat-msg-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+})();
+
+window.addEventListener('beforeunload', () => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
+});
+
+function connectSocket() {
+  socket = io({
+    transports: ['websocket', 'polling']
+  });
+
+  socket.on('connect', () => {
+    socket.emit('user-login', currentUser.id);
+  });
+
+  socket.on('message-received', async (message) => {
+    await loadContacts(true);
+
+    if (activeContact && isMessageForActiveChat(message)) {
+      await loadMessages(true);
+      return;
+    }
+
+    if (!activeContact) {
+      await openInitialChat();
+    }
+  });
+
+  socket.on('user-typing', (data) => {
+    if (activeContact && data.senderId === activeContact.id) {
+      document.getElementById('typing-name').textContent = activeContact.name;
+      document.getElementById('chat-typing-indicator').style.display = data.typing ? 'block' : 'none';
+    }
+  });
+
+  socket.on('user-status', (data) => {
+    syncUserPresence(data);
+  });
+
+  socket.on('message-read', async (data) => {
+    if (activeContact && activeContact.id === data.readerId) {
+      await loadContacts(true);
+      await loadMessages(true);
+    }
+  });
+
+  socket.on('chat-error', (data) => {
+    MC.toast((data && data.error) || 'Failed to send message', 'error');
+  });
+}
+
+function isMessageForActiveChat(message) {
+  return activeContact &&
+    ((message.senderId === activeContact.id && message.receiverId === currentUser.id) ||
+     (message.senderId === currentUser.id && message.receiverId === activeContact.id));
+}
+
+function getPresenceText(user) {
+  if (user.isOnline) {
+    return 'Online';
+  }
+
+  if (user.lastSeenAt) {
+    return `Last seen ${new Date(user.lastSeenAt).toLocaleTimeString('en-IN', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    })}`;
+  }
+
+  if (user.role === 'doctor') {
+    return user.specialization || 'Doctor';
+  }
+
+  return 'Patient';
+}
+
+function syncUserPresence(data) {
+  const patchUser = (user) => {
+    if (!user || user.id !== data.userId) return user;
+    return {
+      ...user,
+      isOnline: data.isOnline,
+      lastSeenAt: data.lastSeenAt || user.lastSeenAt || null
+    };
+  };
+
+  allContacts = allContacts.map((conversation) => ({
+    ...conversation,
+    contact: patchUser(conversation.contact)
+  }));
+  allUsers = allUsers.map(patchUser);
+
+  if (activeContact && activeContact.id === data.userId) {
+    activeContact = patchUser(activeContact);
+    updateActiveHeader();
+  }
+
+  renderContacts();
+}
+
+function updateConversationUnread(contactId, unreadCount) {
+  allContacts = allContacts.map((conversation) =>
+    conversation.contact.id === contactId
+      ? { ...conversation, unreadCount }
+      : conversation
+  );
+}
+
+function updateActiveHeader() {
+  if (!activeContact) return;
+
+  document.getElementById('chat-header-avatar').textContent = activeContact.initials;
+  document.getElementById('chat-header-name').textContent = activeContact.name;
+
+  const statusEl = document.getElementById('chat-header-status');
+  statusEl.textContent = getPresenceText(activeContact);
+  statusEl.classList.toggle('offline', !activeContact.isOnline);
+}
+
+function renderContacts() {
+  const el = document.getElementById('chat-contacts');
+  if (allContacts.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="emoji">MSG</div><p>No conversations yet</p></div>';
+    return;
+  }
+
+  el.innerHTML = allContacts.map((conversation) => `
+    <div class="chat-contact ${activeContact?.id === conversation.contact.id ? 'active' : ''}"
+         data-id="${conversation.contact.id}" data-name="${conversation.contact.name}"
+         onclick="openChatById('${conversation.contact.id}')">
+      <div class="chat-contact-avatar">
+        ${conversation.contact.initials}
+        <span class="online-dot ${conversation.contact.isOnline ? '' : 'offline'}"></span>
+      </div>
+      <div class="chat-contact-info">
+        <div class="chat-contact-name">${conversation.contact.name}</div>
+        <div class="chat-contact-preview">${conversation.lastMessage ? escapeHtml(conversation.lastMessage.content) : 'Start a conversation'}</div>
+      </div>
+      <div class="chat-contact-meta">
+        <div class="chat-contact-time">${conversation.lastMessage ? conversation.lastMessage.timestamp : ''}</div>
+        ${conversation.unreadCount ? `<span class="chat-unread-badge">${conversation.unreadCount}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadContacts(silent = false) {
+  try {
+    const { conversations } = await MC.get('/api/conversations');
+    allContacts = conversations;
+
+    if (activeContact) {
+      const refreshed = allContacts.find((conversation) => conversation.contact.id === activeContact.id);
+      if (refreshed) {
+        activeContact = refreshed.contact;
+        updateActiveHeader();
+      }
+    }
+
+    renderContacts();
+  } catch (e) {
+    if (!silent) {
+      MC.toast(e.message || 'Failed to load conversations', 'error');
+    }
+  }
+}
+
+function openChatById(contactId) {
+  const contact =
+    allContacts.find((conversation) => conversation.contact.id === contactId)?.contact ||
+    allUsers.find((user) => user.id === contactId);
+
+  if (contact) {
+    openChat(contact);
+  }
+}
+
+async function openChat(contact) {
+  activeContact = contact;
+  document.querySelectorAll('.chat-contact').forEach((el) => {
+    el.classList.toggle('active', el.dataset.id === contact.id);
+  });
+
+  document.getElementById('chat-header').style.display = 'flex';
+  document.getElementById('chat-input-wrap').style.display = 'flex';
+  document.getElementById('typing-name').textContent = contact.name;
+  document.getElementById('chat-typing-indicator').style.display = 'none';
+  updateActiveHeader();
+
+  await loadMessages(true);
+}
+
+async function openInitialChat() {
+  if (activeContact) return;
+
+  if (preselectedContactId) {
+    const existing = allContacts.find((conversation) => conversation.contact.id === preselectedContactId);
+    if (existing) {
+      await openChat(existing.contact);
+      preselectedContactId = null;
+      return;
+    }
+
+    const user = await findUserById(preselectedContactId);
+    if (user) {
+      await openChat(user);
+      preselectedContactId = null;
+      return;
+    }
+  }
+
+  if (allContacts.length > 0) {
+    await openChat(allContacts[0].contact);
+  }
+}
+
+function startPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
+
+  pollInterval = setInterval(async () => {
+    if (document.hidden) return;
+    await loadContacts(true);
+    if (activeContact) {
+      await loadMessages(true);
+    }
+  }, 4000);
+}
+
+function getMessageMeta(message, isMine) {
+  if (!isMine) {
+    return message.timestamp;
+  }
+
+  return `${message.timestamp} • ${message.readAt ? 'Seen' : 'Sent'}`;
+}
+
+async function loadMessages(silent = false) {
+  if (!activeContact) return;
+
+  try {
+    const { messages } = await MC.get(`/api/messages/${activeContact.id}`);
+    const el = document.getElementById('chat-messages');
+
+    if (messages.length === 0) {
+      el.innerHTML = `<div class="chat-empty"><div class="icon">CHAT</div><p>Say hello to ${activeContact.name}.</p></div>`;
+      updateConversationUnread(activeContact.id, 0);
+      renderContacts();
+      return;
+    }
+
+    const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    el.innerHTML = messages.map((message) => {
+      const isMine = message.senderId === currentUser.id;
+      return `
+        <div class="msg-row ${isMine ? 'sent' : ''}">
+          <div class="msg-avatar">${isMine ? currentUser.initials : activeContact.initials}</div>
+          <div>
+            <div class="msg-bubble">${escapeHtml(message.content)}</div>
+            <div class="msg-time">${getMessageMeta(message, isMine)}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    updateConversationUnread(activeContact.id, 0);
+    renderContacts();
+
+    if (wasAtBottom || messages.length < 5) {
+      el.scrollTop = el.scrollHeight;
+    }
+  } catch (e) {
+    if (!silent) {
+      MC.toast(e.message || 'Failed to load messages', 'error');
+    }
+  }
+}
+
+async function sendMessage() {
+  if (!activeContact) return;
+
+  const input = document.getElementById('chat-msg-input');
+  const content = input.value.trim();
+  if (!content) return;
+
+  input.value = '';
+
+  try {
+    if (socket?.connected) {
+      socket.emit('stop-typing', { receiverId: activeContact.id });
+      socket.emit('send-message', {
+        receiverId: activeContact.id,
+        content
+      });
+      return;
+    }
+
+    await MC.post('/api/messages', {
+      receiverId: activeContact.id,
+      content
+    });
+
+    await loadContacts(true);
+    await loadMessages(true);
+  } catch (e) {
+    input.value = content;
+    MC.toast(e.message || 'Failed to send message', 'error');
+  }
+}
+
+document.getElementById('chat-msg-input')?.addEventListener('input', () => {
+  if (!activeContact || !socket?.connected) return;
+
+  socket.emit('typing', { receiverId: activeContact.id });
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.emit('stop-typing', { receiverId: activeContact.id });
+  }, 3000);
+});
+
+async function openAddContactModal() {
+  document.getElementById('modal-overlay').style.display = 'block';
+  document.getElementById('add-contact-modal').style.display = 'block';
+
+  try {
+    const data = await MC.get('/api/users');
+    allUsers = data.users || [];
+  } catch (e) {
+    MC.toast('Failed to load users', 'error');
+  }
+
+  const searchInput = document.getElementById('search-users-input');
+  searchInput.value = '';
+  searchInput.focus();
+  document.getElementById('search-results').innerHTML =
+    '<p style="text-align:center; color:#999;">Type to search...</p>';
+}
+
+function closeAddContactModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+  document.getElementById('add-contact-modal').style.display = 'none';
+  document.getElementById('search-users-input').value = '';
+}
+
+document.getElementById('search-users-input')?.addEventListener('input', function() {
+  const query = this.value.toLowerCase();
+  const results = allUsers.filter((user) =>
+    user.id !== currentUser.id &&
+    !allContacts.some((conversation) => conversation.contact.id === user.id) &&
+    (user.name.toLowerCase().includes(query) || (user.phone && user.phone.includes(query)))
+  );
+  displaySearchResults(results);
+});
+
+function displaySearchResults(users) {
+  const resultsEl = document.getElementById('search-results');
+  if (users.length === 0) {
+    resultsEl.innerHTML = '<p style="text-align:center; color:#999;">No users found</p>';
+    return;
+  }
+
+  resultsEl.innerHTML = users.map((user) => `
+    <div class="user-search-result">
+      <div class="user-info">
+        <div class="user-avatar">${user.initials}</div>
+        <div class="user-details">
+          <div class="user-name">${user.name}</div>
+          <div class="user-meta">${user.role === 'doctor' ? user.specialization || 'Doctor' : 'Patient'}</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="startConversation('${user.id}')">Chat</button>
+    </div>
+  `).join('');
+}
+
+async function startConversation(userId) {
+  const user = await findUserById(userId);
+  if (!user) {
+    MC.toast('User not found', 'error');
+    return;
+  }
+
+  if (!allContacts.some((conversation) => conversation.contact.id === user.id)) {
+    allContacts = [{ contact: user, lastMessage: null, unreadCount: 0 }, ...allContacts];
+    renderContacts();
+  }
+
+  closeAddContactModal();
+  await openChat(user);
+  MC.toast(`Now chatting with ${user.name}`, 'success');
+}
+
+async function findUserById(userId) {
+  if (!allUsers.length) {
+    const data = await MC.get('/api/users');
+    allUsers = data.users || [];
+  }
+
+  return allUsers.find((user) => user.id === userId) || null;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedConnect – Login</title>
+  <link rel="stylesheet" href="/Medsty.css" />
+</head>
+
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-logo-wrap">
+        <div class="auth-logo">🏥</div>
+        <h1 class="auth-title">MedConnect</h1>
+        <p class="auth-subtitle">Your trusted healthcare platform</p>
+      </div>
+
+      <!-- Step 1: Phone -->
+      <div class="auth-steps active" id="step-phone">
+        <div class="step-indicator">
+          <div class="step-dot active" id="dot1"></div>
+          <div class="step-dot" id="dot2"></div>
+          <div class="step-dot" id="dot3"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">📱 Mobile Number</label>
+          <input type="tel" id="phone-input" class="form-control" placeholder="+91 98765 43210" maxlength="15" />
+          <p class="text-xs text-muted mt-2">Demo: <strong>9876543210</strong> (Patient) &nbsp;|&nbsp;
+            <strong>9123456780</strong> (Doctor) — OTP: <strong>1234</strong></p>
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" id="send-otp-btn">
+          Send OTP <span>→</span>
+        </button>
+      </div>
+
+      <!-- Step 2: OTP -->
+      <div class="auth-steps" id="step-otp">
+        <div class="step-indicator">
+          <div class="step-dot done" id="dot1b"></div>
+          <div class="step-dot active" id="dot2b"></div>
+          <div class="step-dot" id="dot3b"></div>
+        </div>
+        <p class="auth-subtitle text-center mb-3">Enter the 4-digit OTP sent to <strong id="otp-phone-display"></strong>
+        </p>
+        <div class="otp-wrap">
+          <input type="text" class="otp-digit" maxlength="1" id="otp0" aria-label="OTP digit 1" placeholder="•" />
+          <input type="text" class="otp-digit" maxlength="1" id="otp1" aria-label="OTP digit 2" placeholder="•" />
+          <input type="text" class="otp-digit" maxlength="1" id="otp2" aria-label="OTP digit 3" placeholder="•" />
+          <input type="text" class="otp-digit" maxlength="1" id= "otp3" aria-label="OTP digit 4" placeholder="•" />
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" id="verify-otp-btn">
+          Verify OTP ✅
+        </button>
+        <p class="text-center text-sm text-muted mt-3">
+          Didn't receive? <a href="#" id="resend-otp" class="text-primary font-bold">Resend OTP</a>
+        </p>
+        <button class="btn btn-ghost btn-sm mt-2" id="back-to-phone">← Back</button>
+      </div>
+
+      <!-- Step 3: Role Selection -->
+      <div class="auth-steps" id="step-role">
+        <div class="step-indicator">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+        </div>
+        <h3 class="auth-title text-center mb-2" style="font-size:1.3rem">Choose Your Role</h3>
+        <p class="auth-subtitle text-center mb-3">Select how you want to continue</p>
+        <div class="role-cards" id="role-cards-container"></div>
+        <button class="btn btn-primary btn-block btn-lg" id="confirm-role-btn" disabled>
+          Continue →
+        </button>
+      </div>
+
+      <div class="divider mt-3"></div>
+      <p class="text-center text-xs text-muted">By continuing, you agree to our <a href="#"
+          class="text-primary">Terms</a> & <a href="#" class="text-primary">Privacy Policy</a></p>
+    </div>
+  </div>
+
+  <script src="/utils.js"></script>
+  <script>
+    let phoneNumber = '';
+    let availableUsers = [];
+    let selectedUserId = null;
+
+    // ─── Step navigation ────────────────────────────────────────────────────
+    function showStep(id) {
+      document.querySelectorAll('.auth-steps').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    // ─── Send OTP ────────────────────────────────────────────────────────────
+    document.getElementById('send-otp-btn').addEventListener('click', async () => {
+      const raw = document.getElementById('phone-input').value.replace(/\D/g, '');
+      if (raw.length < 10) { MC.toast('Please enter a valid 10-digit mobile number', 'error'); return; }
+      phoneNumber = raw.slice(-10);
+      MC.loading(true);
+      try {
+        const data = await MC.post('/api/auth/send-otp', { phone: phoneNumber });
+        MC.toast(data.message, 'success');
+        document.getElementById('otp-phone-display').textContent = '+91 ' + phoneNumber;
+        showStep('step-otp');
+        document.getElementById('otp0').focus();
+      } catch (e) {
+        MC.toast(e.message, 'error');
+      } finally { MC.loading(false); }
+    });
+
+    // Enter key on phone input
+    document.getElementById('phone-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('send-otp-btn').click();
+    });
+
+    // ─── OTP Input Behavior ──────────────────────────────────────────────────
+    const otpInputs = document.querySelectorAll('.otp-digit');
+    otpInputs.forEach((input, i) => {
+      input.addEventListener('input', () => {
+        input.value = input.value.replace(/\D/, '');
+        if (input.value && i < 3) otpInputs[i + 1].focus();
+      });
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Backspace' && !input.value && i > 0) otpInputs[i - 1].focus();
+      });
+      input.addEventListener('paste', e => {
+        e.preventDefault();
+        const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4);
+        digits.split('').forEach((d, j) => { if (otpInputs[j]) otpInputs[j].value = d; });
+        const nextEmpty = [...otpInputs].findIndex(i => !i.value);
+        if (nextEmpty !== -1) otpInputs[nextEmpty].focus(); else otpInputs[3].focus();
+      });
+    });
+
+    // ─── Verify OTP ──────────────────────────────────────────────────────────
+    document.getElementById('verify-otp-btn').addEventListener('click', async () => {
+      const otp = [...otpInputs].map(i => i.value).join('');
+      if (otp.length < 4) { MC.toast('Please enter the 4-digit OTP', 'error'); return; }
+      MC.loading(true);
+      try {
+        const data = await MC.post('/api/auth/verify-otp', { phone: phoneNumber, otp });
+        availableUsers = data.users;
+        renderRoleCards();
+        showStep('step-role');
+      } catch (e) {
+        MC.toast(e.message, 'error');
+      } finally { MC.loading(false); }
+    });
+
+    // ─── Resend OTP ──────────────────────────────────────────────────────────
+    document.getElementById('resend-otp').addEventListener('click', async (e) => {
+      e.preventDefault();
+      MC.loading(true);
+      try {
+        const data = await MC.post('/api/auth/send-otp', { phone: phoneNumber });
+        MC.toast('OTP resent!', 'success');
+      } catch (e) { MC.toast(e.message, 'error'); }
+      finally { MC.loading(false); }
+    });
+
+    document.getElementById('back-to-phone').addEventListener('click', () => showStep('step-phone'));
+
+    // ─── Render Role Cards ────────────────────────────────────────────────────
+    function renderRoleCards() {
+      const container = document.getElementById('role-cards-container');
+      const icons = { patient: '🧑‍⚕️', doctor: '👨‍⚕️' };
+      const descs = { patient: 'Book appointments & consult', doctor: 'Manage patients & schedules' };
+      container.innerHTML = availableUsers.map(u => `
+      <div class="role-card" data-id="${u.id}" onclick="selectRole('${u.id}')">
+        <div class="icon">${icons[u.role] || '👤'}</div>
+        <div class="label">${u.name}</div>
+        <div class="desc">${descs[u.role] || u.role}</div>
+      </div>
+    `).join('');
+      if (availableUsers.length === 1) selectRole(availableUsers[0].id);
+    }
+
+    function selectRole(id) {
+      selectedUserId = id;
+      document.querySelectorAll('.role-card').forEach(c => c.classList.toggle('selected', c.dataset.id === id));
+      document.getElementById('confirm-role-btn').disabled = false;
+    }
+
+
+    document.getElementById('confirm-role-btn').addEventListener('click', async () => {
+      if (!selectedUserId) return;
+      MC.loading(true);
+      try {
+        const data = await MC.post('/api/auth/login', { userId: selectedUserId });
+        const user = data.user;
+        MC.toast(`Welcome, ${user.name}!`, 'success');
+        setTimeout(() => {
+          window.location.href = user.role === 'doctor' ? '/doctor-dashboard' : '/patient-dashboard';
+        }, 800);
+      } catch (e) {
+        MC.toast(e.message, 'error');
+      } finally { MC.loading(false); }
+    });
+
+    MC.getMe().then(data => {
+      if (data) {
+        window.location.href = data.user.role === 'doctor' ? '/doctor-dashboard' : '/patient-dashboard';
+      }
+    });
+  </script>
+</body>
+
+</html>

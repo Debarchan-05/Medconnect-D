@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documents – MedConnect</title>
+  <link rel="stylesheet" href="/Medsty.css" />
+</head>
+<body>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="/patient-dashboard" class="navbar-brand"><div class="brand-icon">🏥</div><span>MedConnect</span></a>
+    <nav class="navbar-nav">
+      <a href="/patient-dashboard" class="nav-link">Home</a>
+      <a href="/documents" class="nav-link active">My Records</a>
+    </nav>
+    <div class="navbar-right">
+      <div class="avatar-btn">
+        <div class="avatar" id="nav-avatar">?</div>
+        <span class="avatar-name" id="nav-name">Loading…</span>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <a href="/patient-dashboard" class="sidebar-link"><span class="sidebar-icon">📊</span> Dashboard</a>
+      <a href="/appointment" class="sidebar-link"><span class="sidebar-icon">📅</span> Appointments</a>
+      <a href="/documents" class="sidebar-link active"><span class="sidebar-icon">📁</span> Documents</a>
+      <a href="/chat" class="sidebar-link"><span class="sidebar-icon">💬</span> Chat</a>
+      <a href="/payment" class="sidebar-link"><span class="sidebar-icon">💳</span> Payments</a>
+    </div>
+    <div class="sidebar-divider"></div>
+    <a href="#" class="sidebar-link" data-logout><span class="sidebar-icon">🚪</span> Logout</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">My Medical Documents</h1>
+        <p class="page-subtitle">Upload and manage your medical records securely</p>
+      </div>
+    </div>
+
+    <!-- Upload Zone -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📤 Upload Document</h2>
+      </div>
+      <div class="card-body">
+        <div class="upload-zone" id="upload-zone">
+          <div class="upload-icon">📁</div>
+          <div class="upload-title">Drag & drop files here, or click to browse</div>
+          <div class="upload-subtitle">Supports PDF, JPG, PNG, DICOM — Max 20MB per file</div>
+          <input type="file" id="file-input" style="display:none" multiple accept=".pdf,.jpg,.jpeg,.png" />
+        </div>
+        <div id="upload-previews" style="margin-top:16px"></div>
+      </div>
+    </div>
+
+    <!-- Documents List -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📂 Uploaded Documents</h2>
+        <span class="text-sm text-muted" id="doc-count">0 files</span>
+      </div>
+      <div class="card-body" id="doc-list">
+        <div class="empty-state"><div class="emoji">⏳</div><h3>Loading…</h3></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/utils.js"></script>
+<script>
+const fileIcons = { pdf: '📄', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', default: '📋' };
+
+(async () => {
+  const user = await MC.requireAuth('patient');
+  if (!user) return;
+  document.getElementById('nav-name').textContent = user.name;
+  document.getElementById('nav-avatar').textContent = user.initials;
+  loadDocuments();
+})();
+
+// Upload zone interactions
+const zone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+
+zone.addEventListener('click', () => fileInput.click());
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+async function handleFiles(files) {
+  for (const file of files) {
+    await uploadFile(file);
+  }
+  loadDocuments();
+}
+
+async function uploadFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const size = file.size < 1024 * 1024
+    ? `${(file.size / 1024).toFixed(1)} KB`
+    : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+  try {
+    await MC.post('/api/documents', { name: file.name, size, type: ext });
+    MC.toast(`"${file.name}" uploaded successfully`, 'success');
+  } catch(e) { MC.toast(e.message, 'error'); }
+}
+
+async function loadDocuments() {
+  try {
+    const { documents } = await MC.get('/api/documents');
+    const el = document.getElementById('doc-list');
+    document.getElementById('doc-count').textContent = `${documents.length} file${documents.length !== 1 ? 's' : ''}`;
+    if (documents.length === 0) {
+      el.innerHTML = `<div class="empty-state"><div class="emoji">📁</div><h3>No documents uploaded yet</h3><p>Upload your lab reports, X-rays, prescriptions, and more</p></div>`;
+      return;
+    }
+    el.innerHTML = documents.map(d => {
+      const ext = d.name.split('.').pop().toLowerCase();
+      const icon = fileIcons[ext] || fileIcons.default;
+      return `
+        <div class="doc-item">
+          <div class="doc-icon">${icon}</div>
+          <div class="doc-info">
+            <div class="doc-name">${d.name}</div>
+            <div class="doc-meta">${d.size} &bull; Uploaded ${MC.formatDate(d.date)}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="MC.toast('Download feature coming soon!','info')">⬇️</button>
+          <button class="doc-del-btn" onclick="deleteDocument('${d.id}', this)">🗑️</button>
+        </div>
+      `;
+    }).join('');
+  } catch {}
+}
+
+async function deleteDocument(id, btn) {
+  if (!confirm('Delete this document?')) return;
+  try {
+    await MC.delete(`/api/documents/${id}`);
+    MC.toast('Document deleted', 'success');
+    loadDocuments();
+  } catch(e) { MC.toast(e.message, 'error'); }
+}
+</script>
+</body>
+</html>

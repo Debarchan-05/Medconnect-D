@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prescription – MedConnect</title>
+  <link rel="stylesheet" href="/Medsty.css" />
+</head>
+<body>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="/doctor-dashboard" class="navbar-brand"><div class="brand-icon">🏥</div><span>MedConnect</span></a>
+    <nav class="navbar-nav">
+      <a href="/doctor-dashboard" class="nav-link">Dashboard</a>
+      <a href="/prescription" class="nav-link active">Prescriptions</a>
+      <a href="/chat" class="nav-link">Chat</a>
+    </nav>
+    <div class="navbar-right">
+      <div class="avatar-btn">
+        <div class="avatar" id="nav-avatar">DR</div>
+        <span class="avatar-name" id="nav-name">Loading…</span>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <a href="/doctor-dashboard" class="sidebar-link"><span class="sidebar-icon">📊</span> Dashboard</a>
+      <a href="/prescription" class="sidebar-link active"><span class="sidebar-icon">📝</span> Prescriptions</a>
+      <a href="/chat" class="sidebar-link"><span class="sidebar-icon">💬</span> Chat</a>
+    </div>
+    <div class="sidebar-divider"></div>
+    <a href="#" class="sidebar-link" data-logout><span class="sidebar-icon">🚪</span> Logout</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Prescriptions</h1>
+        <p class="page-subtitle">Write and manage patient prescriptions</p>
+      </div>
+      <button class="btn btn-primary" id="new-rx-btn" onclick="showWriteForm()">✍️ New Prescription</button>
+    </div>
+
+    <!-- Write Prescription Form -->
+    <div id="write-form-area" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Write Prescription</h2>
+          <button class="btn btn-ghost btn-sm" onclick="cancelWrite()">✕ Cancel</button>
+        </div>
+        <div class="card-body">
+          <!-- Patient Selection -->
+          <div class="form-group">
+            <label class="form-label">Select Patient</label>
+            <select class="form-control" id="rx-patient-select" onchange="updatePatientInfo()">
+              <option value="">– Select patient –</option>
+            </select>
+          </div>
+          <div id="patient-info-strip" class="hidden patient-info-strip">
+            <div class="patient-strip-avatar" id="px-avatar">AK</div>
+            <div>
+              <div class="patient-strip-name" id="px-name">–</div>
+              <div class="patient-strip-meta" id="px-meta">–</div>
+            </div>
+          </div>
+
+          <!-- Appointment -->
+          <div class="form-group">
+            <label class="form-label">Appointment (optional)</label>
+            <select class="form-control" id="rx-appt-select">
+              <option value="">– Not linked to appointment –</option>
+            </select>
+          </div>
+
+          <!-- Complaint & Diagnosis -->
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label">Chief Complaint</label>
+              <textarea class="form-control" id="rx-complaint" placeholder="Patient's main symptoms…"></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Diagnosis</label>
+              <textarea class="form-control" id="rx-diagnosis" placeholder="Your clinical diagnosis…"></textarea>
+            </div>
+          </div>
+
+          <!-- Medicines -->
+          <div class="form-group">
+            <label class="form-label">💊 Medicines</label>
+            <div id="medicines-list">
+              <div class="medicine-row">
+                <input type="text" class="form-control" placeholder="Medicine name" />
+                <input type="text" class="form-control" placeholder="Dosage (e.g. 500mg)" />
+                <input type="text" class="form-control" placeholder="Frequency" />
+                <button class="remove-med-btn" onclick="removeMedicine(this)">✕</button>
+              </div>
+            </div>
+            <button class="add-med-btn" onclick="addMedicine()">+ Add Medicine</button>
+          </div>
+
+          <!-- Notes & Follow-up -->
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label">Medical Notes / Advice</label>
+              <textarea class="form-control" id="rx-notes" placeholder="Additional instructions, dietary advice, etc."></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Follow-up Date</label>
+              <input type="date" class="form-control" id="rx-followup" />
+            </div>
+          </div>
+
+          <div class="flex gap-3 mt-4">
+            <button class="btn btn-success btn-lg" onclick="savePrescription()">💾 Save Prescription</button>
+            <button class="btn btn-ghost btn-lg" onclick="MC.toast('Printing…','info')">🖨️ Print</button>
+            <button class="btn btn-ghost btn-lg" onclick="cancelWrite()">✕ Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Past Prescriptions -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📋 Past Prescriptions</h2>
+      </div>
+      <div class="card-body" id="rx-list">
+        <div class="empty-state"><div class="emoji">⏳</div><h3>Loading…</h3></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/utils.js"></script>
+<script>
+let currentUser = null;
+let appointments = [];
+
+(async () => {
+  currentUser = await MC.requireAuth('doctor');
+  if (!currentUser) return;
+  document.getElementById('nav-name').textContent = currentUser.name;
+  document.getElementById('nav-avatar').textContent = currentUser.initials;
+
+  // Load appointments for the form
+  try {
+    const data = await MC.get('/api/appointments');
+    appointments = data.appointments.filter(a => a.status !== 'cancelled');
+    // Populate patient select
+    const patients = [...new Map(appointments.map(a => [a.patient.id, a.patient])).values()];
+    const sel = document.getElementById('rx-patient-select');
+    patients.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} (${p.age || '–'} yrs)`;
+      sel.appendChild(opt);
+    });
+  } catch {}
+
+  // Pre-fill from query params
+  const params = new URLSearchParams(location.search);
+  const preAppt = params.get('apptId');
+  const prePatient = params.get('patientId');
+  if (prePatient || preAppt) {
+    showWriteForm();
+    if (prePatient) {
+      document.getElementById('rx-patient-select').value = prePatient;
+      updatePatientInfo();
+    }
+    if (preAppt) {
+      setTimeout(() => {
+        document.getElementById('rx-appt-select').value = preAppt;
+      }, 100);
+    }
+  }
+
+  loadPrescriptions();
+})();
+
+function showWriteForm() {
+  document.getElementById('write-form-area').classList.remove('hidden');
+  document.getElementById('write-form-area').scrollIntoView({ behavior:'smooth' });
+}
+
+function cancelWrite() {
+  document.getElementById('write-form-area').classList.add('hidden');
+}
+
+function updatePatientInfo() {
+  const patientId = document.getElementById('rx-patient-select').value;
+  const strip = document.getElementById('patient-info-strip');
+  if (!patientId) { strip.classList.add('hidden'); return; }
+  const patientAppts = appointments.filter(a => a.patient.id === patientId);
+  const patient = patientAppts[0]?.patient;
+  if (!patient) return;
+  strip.classList.remove('hidden');
+  document.getElementById('px-avatar').textContent = patient.initials;
+  document.getElementById('px-name').textContent = patient.name;
+  document.getElementById('px-meta').textContent = `${patient.gender || 'Unknown'}, ${patient.age || '–'} yrs &bull; ${patient.email || '–'}`;
+  // Populate appointment select
+  const apptSel = document.getElementById('rx-appt-select');
+  apptSel.innerHTML = '<option value="">– Not linked –</option>';
+  patientAppts.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.id;
+    opt.textContent = `${MC.formatDate(a.date)} – ${a.time} (${a.status})`;
+    apptSel.appendChild(opt);
+  });
+}
+
+function addMedicine() {
+  const row = document.createElement('div');
+  row.className = 'medicine-row';
+  row.innerHTML = `
+    <input type="text" class="form-control" placeholder="Medicine name" />
+    <input type="text" class="form-control" placeholder="Dosage" />
+    <input type="text" class="form-control" placeholder="Frequency" />
+    <button class="remove-med-btn" onclick="removeMedicine(this)">✕</button>
+  `;
+  document.getElementById('medicines-list').appendChild(row);
+}
+
+function removeMedicine(btn) {
+  const rows = document.querySelectorAll('#medicines-list .medicine-row');
+  if (rows.length > 1) btn.closest('.medicine-row').remove();
+  else MC.toast('At least one medicine row required', 'warning');
+}
+
+async function savePrescription() {
+  const patientId = document.getElementById('rx-patient-select').value;
+  if (!patientId) { MC.toast('Please select a patient', 'error'); return; }
+  const complaint = document.getElementById('rx-complaint').value.trim();
+  const diagnosis = document.getElementById('rx-diagnosis').value.trim();
+  if (!diagnosis) { MC.toast('Please enter a diagnosis', 'error'); return; }
+
+  // Collect medicines
+  const rows = document.querySelectorAll('#medicines-list .medicine-row');
+  const medicines = [];
+  let valid = true;
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    if (inputs[0].value.trim()) {
+      medicines.push({ name: inputs[0].value.trim(), dosage: inputs[1].value.trim(), frequency: inputs[2].value.trim() });
+    }
+  });
+  if (medicines.length === 0) { MC.toast('Add at least one medicine', 'error'); return; }
+
+  MC.loading(true);
+  try {
+    await MC.post('/api/prescriptions', {
+      patientId,
+      appointmentId: document.getElementById('rx-appt-select').value || null,
+      complaint,
+      diagnosis,
+      medicines,
+      notes: document.getElementById('rx-notes').value.trim(),
+      followUpDate: document.getElementById('rx-followup').value || null
+    });
+    MC.toast('Prescription saved!', 'success');
+    cancelWrite();
+    loadPrescriptions();
+  } catch(e) { MC.toast(e.message, 'error'); }
+  finally { MC.loading(false); }
+}
+
+async function loadPrescriptions() {
+  try {
+    const { prescriptions } = await MC.get('/api/prescriptions');
+    const el = document.getElementById('rx-list');
+    if (prescriptions.length === 0) {
+      el.innerHTML = `<div class="empty-state"><div class="emoji">📝</div><h3>No prescriptions written yet</h3><p>Use the "New Prescription" button above</p></div>`;
+      return;
+    }
+    el.innerHTML = prescriptions.map(rx => `
+      <div class="rx-card">
+        <div class="rx-header">
+          <div>
+            <div class="font-bold" style="color:var(--gray-800);font-size:1rem">${rx.patient.name}</div>
+            <div class="text-sm text-muted">${rx.patient.gender || ''} ${rx.patient.age ? '• ' + rx.patient.age + ' yrs' : ''}</div>
+          </div>
+          <div class="rx-date">${MC.formatDate(rx.date)}</div>
+        </div>
+        <div class="rx-section-title">Diagnosis</div>
+        <div class="rx-text">${rx.diagnosis}</div>
+        ${rx.complaint ? `<div class="rx-section-title">Complaint</div><div class="rx-text">${rx.complaint}</div>` : ''}
+        <div class="rx-section-title">Medicines</div>
+        <table class="rx-medicine-table">
+          <thead><tr><th>Medicine</th><th>Dosage</th><th>Frequency</th></tr></thead>
+          <tbody>
+            ${rx.medicines.map(m => `<tr><td>${m.name}</td><td>${m.dosage}</td><td>${m.frequency}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        ${rx.notes ? `<div class="rx-section-title">Notes</div><div class="rx-text">${rx.notes}</div>` : ''}
+        ${rx.followUpDate ? `<div class="text-sm text-muted mt-2">📅 Follow-up: ${MC.formatDate(rx.followUpDate)}</div>` : ''}
+      </div>
+    `).join('');
+  } catch {}
+}
+</script>
+</body>
+</html>

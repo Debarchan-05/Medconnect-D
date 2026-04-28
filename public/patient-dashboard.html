@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patient Dashboard – MedConnect</title>
+  <link rel="stylesheet" href="/Medsty.css" />
+</head>
+<body>
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="/patient-dashboard" class="navbar-brand">
+      <div class="brand-icon">🏥</div><span>MedConnect</span>
+    </a>
+    <nav class="navbar-nav">
+      <a href="/patient-dashboard" class="nav-link active">Home</a>
+      <a href="/appointment" class="nav-link">Book Appointment</a>
+      <a href="/chat" class="nav-link">Messages</a>
+      <a href="/documents" class="nav-link">Records</a>
+    </nav>
+    <div class="navbar-right">
+      <div class="notif-btn">🔔<span class="notif-badge" id="notif-count">0</span></div>
+      <div class="avatar-btn">
+        <div class="avatar" id="nav-avatar">?</div>
+        <span class="avatar-name" id="nav-name">Loading…</span>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Main Menu</div>
+      <a href="/patient-dashboard" class="sidebar-link active">
+        <span class="sidebar-icon">📊</span> Dashboard
+      </a>
+      <a href="/appointment" class="sidebar-link">
+        <span class="sidebar-icon">📅</span> Appointments
+      </a>
+      <a href="/documents" class="sidebar-link">
+        <span class="sidebar-icon">📁</span> Upload Documents
+      </a>
+      <a href="/chat" class="sidebar-link">
+        <span class="sidebar-icon">💬</span> Chat with Doctor
+        <span class="sidebar-badge" id="msg-badge">0</span>
+      </a>
+      <a href="/payment" class="sidebar-link">
+        <span class="sidebar-icon">💳</span> Payments
+      </a>
+    </div>
+    <div class="sidebar-divider"></div>
+    <a href="#" class="sidebar-link" data-logout>
+      <span class="sidebar-icon">🚪</span> Logout
+    </a>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Patient Dashboard</h1>
+        <p class="page-subtitle">Welcome back, <span id="welcome-name">–</span>!</p>
+      </div>
+      <a href="/appointment" class="btn btn-primary">
+        + Book Appointment
+      </a>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <div class="stat-top">
+          <div class="stat-icon blue">📅</div>
+        </div>
+        <div class="stat-value" id="stat-upcoming">–</div>
+        <div class="stat-label">Upcoming Appointments</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-top">
+          <div class="stat-icon green">✅</div>
+        </div>
+        <div class="stat-value" id="stat-completed">–</div>
+        <div class="stat-label">Completed Visits</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-top">
+          <div class="stat-icon orange">💬</div>
+        </div>
+        <div class="stat-value" id="stat-messages">–</div>
+        <div class="stat-label">Unread Messages</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-top">
+          <div class="stat-icon purple">📁</div>
+        </div>
+        <div class="stat-value" id="stat-docs">–</div>
+        <div class="stat-label">Documents Uploaded</div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">⚡ Quick Actions</h2>
+      </div>
+      <div class="card-body flex gap-3 flex-wrap">
+        <a href="/appointment" class="btn btn-primary">📅 Book Appointment</a>
+        <a href="/chat" class="btn btn-ghost">💬 Chat with Doctor</a>
+        <a href="/documents" class="btn btn-ghost">📁 Upload Documents</a>
+        <a href="/payment" class="btn btn-ghost">💳 Make Payment</a>
+      </div>
+    </div>
+
+    <!-- Upcoming Appointments -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📅 Upcoming Appointments</h2>
+        <a href="/appointment" class="btn btn-outline btn-sm">View All</a>
+      </div>
+      <div class="card-body" id="upcoming-appointments">
+        <div class="empty-state"><div class="emoji">📅</div><h3>Loading…</h3></div>
+      </div>
+    </div>
+
+    <!-- Find Doctors -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">👨‍⚕️ Available Doctors</h2>
+        <a href="/appointment" class="btn btn-outline btn-sm">Book Now</a>
+      </div>
+      <div class="card-body">
+        <div class="doctor-grid" id="doctors-grid">
+          <div class="empty-state"><div class="emoji">👨‍⚕️</div><h3>Loading doctors…</h3></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Consultations -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">📋 Recent Consultations</h2>
+      </div>
+      <div class="card-body" id="recent-consultations">
+        <div class="empty-state"><div class="emoji">📋</div><h3>Loading…</h3></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/utils.js"></script>
+<script>
+(async () => {
+  const user = await MC.requireAuth('patient');
+  if (!user) return;
+
+  // Set user info
+  document.getElementById('nav-name').textContent = user.name;
+  document.getElementById('nav-avatar').textContent = user.initials;
+  document.getElementById('welcome-name').textContent = user.name.split(' ')[0];
+
+  // Load stats
+  try {
+    const stats = await MC.get('/api/stats');
+    document.getElementById('stat-upcoming').textContent = stats.upcoming;
+    document.getElementById('stat-completed').textContent = stats.completed;
+    document.getElementById('stat-messages').textContent = stats.unreadMessages;
+    document.getElementById('stat-docs').textContent = stats.documents;
+    document.getElementById('notif-count').textContent = stats.upcoming;
+    document.getElementById('msg-badge').textContent = stats.unreadMessages;
+  } catch {}
+
+  // Load appointments
+  try {
+    const { appointments } = await MC.get('/api/appointments');
+    const upcoming = appointments.filter(a => ['confirmed','pending'].includes(a.status));
+    const completed = appointments.filter(a => a.status === 'completed');
+
+    // Upcoming
+    const upEl = document.getElementById('upcoming-appointments');
+    if (upcoming.length === 0) {
+      upEl.innerHTML = `<div class="empty-state"><div class="emoji">📅</div><h3>No upcoming appointments</h3><p>Book one now!</p></div>`;
+    } else {
+      upEl.innerHTML = upcoming.slice(0,3).map(a => `
+        <div class="appt-item">
+          <div class="appt-avatar">${a.doctor.initials}</div>
+          <div class="appt-info">
+            <div class="appt-name">${a.doctor.name}</div>
+            <div class="appt-detail">${a.doctor.specialization} &bull; ${a.time}</div>
+          </div>
+          <div class="appt-meta">
+            <div class="appt-time">${MC.formatDate(a.date)}</div>
+            ${MC.renderBadge(a.status)}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Recent
+    const reEl = document.getElementById('recent-consultations');
+    if (completed.length === 0) {
+      reEl.innerHTML = `<div class="empty-state"><div class="emoji">📋</div><h3>No past consultations</h3></div>`;
+    } else {
+      reEl.innerHTML = completed.slice(0,3).map(a => `
+        <div class="appt-item">
+          <div class="appt-avatar">${a.doctor.initials}</div>
+          <div class="appt-info">
+            <div class="appt-name">${a.doctor.name}</div>
+            <div class="appt-detail">${a.doctor.specialization}</div>
+          </div>
+          <div class="appt-meta">
+            <div class="appt-time">${MC.formatDate(a.date)}</div>
+            <a href="/prescription" class="btn btn-outline btn-sm mt-2">📄 Rx</a>
+          </div>
+        </div>
+      `).join('');
+    }
+  } catch {}
+
+  // Load doctors
+  try {
+    const { doctors } = await MC.get('/api/doctors');
+    const grid = document.getElementById('doctors-grid');
+    const emojis = ['👨‍⚕️','👩‍⚕️','👨‍⚕️','👩‍⚕️'];
+    grid.innerHTML = doctors.slice(0,4).map((d,i) => `
+      <div class="doctor-card">
+        <div class="doctor-img">${emojis[i % emojis.length]}</div>
+        <div class="doctor-body">
+          <div class="doctor-name">${d.name}</div>
+          <div class="doctor-spec">${d.specialization}</div>
+          <div class="doctor-meta">
+            <div class="doctor-rating">⭐ ${d.rating} (${d.reviews} reviews)</div>
+            <div class="doctor-fee">₹${d.fee}</div>
+          </div>
+          <div class="doctor-actions">
+            <a href="/appointment?doctorId=${d.id}" class="btn btn-primary btn-sm">Book Now</a>
+            <a href="/chat?doctorId=${d.id}" class="btn btn-outline btn-sm">Chat</a>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  } catch {}
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment – MedConnect</title>
+  <link rel="stylesheet" href="/Medsty.css" />
+</head>
+<body>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <a href="/patient-dashboard" class="navbar-brand"><div class="brand-icon">🏥</div><span>MedConnect</span></a>
+    <nav class="navbar-nav">
+      <a href="/patient-dashboard" class="nav-link">Home</a>
+      <a href="/appointment" class="nav-link">Appointments</a>
+      <a href="/payment" class="nav-link active">Payments</a>
+    </nav>
+    <div class="navbar-right">
+      <div class="avatar-btn">
+        <div class="avatar" id="nav-avatar">?</div>
+        <span class="avatar-name" id="nav-name">Loading…</span>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <a href="/patient-dashboard" class="sidebar-link"><span class="sidebar-icon">📊</span> Dashboard</a>
+      <a href="/appointment" class="sidebar-link"><span class="sidebar-icon">📅</span> Appointments</a>
+      <a href="/documents" class="sidebar-link"><span class="sidebar-icon">📁</span> Documents</a>
+      <a href="/chat" class="sidebar-link"><span class="sidebar-icon">💬</span> Chat</a>
+      <a href="/payment" class="sidebar-link active"><span class="sidebar-icon">💳</span> Payments</a>
+    </div>
+    <div class="sidebar-divider"></div>
+    <a href="#" class="sidebar-link" data-logout><span class="sidebar-icon">🚪</span> Logout</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Payment</h1>
+        <p class="page-subtitle">Complete your payment to confirm the appointment</p>
+      </div>
+    </div>
+
+    <!-- Success Screen (hidden until paid) -->
+    <div class="card pay-success" id="pay-success-card">
+      <div class="card-body">
+        <div class="text-center" style="padding:32px 20px">
+          <div class="success-circle">✓</div>
+          <h2 style="font-size:1.5rem;font-weight:800;color:var(--gray-900);margin-bottom:8px">Payment Successful!</h2>
+          <p class="text-muted mb-4">Your appointment has been confirmed. Check your messages for details.</p>
+          <div style="background:var(--gray-50);border-radius:var(--r-lg);padding:20px;text-align:left;max-width:400px;margin:0 auto 24px">
+            <div class="summary-row"><span class="summary-label">Transaction ID</span><span class="summary-val" id="txn-id">–</span></div>
+            <div class="summary-row"><span class="summary-label">Doctor</span><span class="summary-val" id="txn-doctor">–</span></div>
+            <div class="summary-row"><span class="summary-label">Date & Time</span><span class="summary-val" id="txn-datetime">–</span></div>
+            <div class="summary-row"><span class="summary-label">Amount Paid</span><span class="summary-val text-primary font-bold" id="txn-amount">–</span></div>
+          </div>
+          <div class="flex gap-3 justify-content:center" style="justify-content:center">
+            <a href="/patient-dashboard" class="btn btn-primary">🏠 Go to Dashboard</a>
+            <button class="btn btn-ghost" onclick="MC.toast('Receipt sent to your email!','success')">📧 Send Receipt</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Form (shown by default) -->
+    <div id="payment-form-area">
+      <div class="payment-layout">
+        <!-- Methods -->
+        <div class="card">
+          <div class="card-body">
+            <h2 class="pay-methods-title">Select Payment Method</h2>
+
+            <div class="pay-option active" data-method="qr" onclick="selectPayMethod(this,'qr')">
+              <div class="pay-option-icon">📱</div>
+              <div class="pay-option-info"><h4>QR Code / UPI</h4><p>Scan QR code to pay instantly</p></div>
+              <div class="pay-radio"></div>
+            </div>
+            <div class="pay-option" data-method="credit" onclick="selectPayMethod(this,'credit')">
+              <div class="pay-option-icon">💳</div>
+              <div class="pay-option-info"><h4>Credit Card</h4><p>Visa, Mastercard, RuPay</p></div>
+              <div class="pay-radio"></div>
+            </div>
+            <div class="pay-option" data-method="debit" onclick="selectPayMethod(this,'debit')">
+              <div class="pay-option-icon">🏦</div>
+              <div class="pay-option-info"><h4>Debit Card</h4><p>Pay directly from your bank</p></div>
+              <div class="pay-radio"></div>
+            </div>
+            <div class="pay-option" data-method="upi" onclick="selectPayMethod(this,'upi')">
+              <div class="pay-option-icon">📲</div>
+              <div class="pay-option-info"><h4>UPI Apps</h4><p>Google Pay, PhonePe, Paytm</p></div>
+              <div class="pay-radio"></div>
+            </div>
+            <div class="pay-option" data-method="netbanking" onclick="selectPayMethod(this,'netbanking')">
+              <div class="pay-option-icon">🌐</div>
+              <div class="pay-option-info"><h4>Net Banking</h4><p>Pay through your bank website</p></div>
+              <div class="pay-radio"></div>
+            </div>
+
+            <!-- QR Section -->
+            <div class="pay-section show" id="sec-qr">
+              <div class="qr-box">
+                <h3 style="font-weight:700;color:var(--gray-800);margin-bottom:8px">Scan to Pay</h3>
+                <div class="qr-img">⬛</div>
+                <p class="text-sm text-muted">Open any UPI app and scan this QR code to pay <strong id="qr-amount">₹500</strong></p>
+                <p class="text-xs text-muted mt-2">MedConnect@upi</p>
+              </div>
+            </div>
+
+            <!-- Card Section -->
+            <div class="pay-section" id="sec-card">
+              <div class="form-group">
+                <label class="form-label">Card Number</label>
+                <input type="text" class="form-control" placeholder="1234 5678 9012 3456" maxlength="19"
+                  oninput="this.value=this.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim()" />
+              </div>
+              <div class="grid-2">
+                <div class="form-group">
+                  <label class="form-label">Expiry Date</label>
+                  <input type="text" class="form-control" placeholder="MM/YY" maxlength="5"
+                    oninput="this.value=this.value.replace(/[^0-9/]/g,'').replace(/^(\d{2})(\d)/,'$1/$2')" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">CVV</label>
+                  <input type="password" class="form-control" placeholder="•••" maxlength="4" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cardholder Name</label>
+                <input type="text" class="form-control" placeholder="Name on card" />
+              </div>
+            </div>
+
+            <!-- UPI Apps -->
+            <div class="pay-section" id="sec-upi">
+              <div class="upi-apps-grid">
+                <button class="btn btn-ghost upi-app-btn" onclick="MC.toast('Redirecting to GPay…','info')">📱 GPay</button>
+                <button class="btn btn-ghost upi-app-btn" onclick="MC.toast('Redirecting to PhonePe…','info')">📲 PhonePe</button>
+                <button class="btn btn-ghost upi-app-btn" onclick="MC.toast('Redirecting to Paytm…','info')">💰 Paytm</button>
+              </div>
+            </div>
+
+            <!-- Net Banking -->
+            <div class="pay-section" id="sec-netbanking">
+              <div class="form-group">
+                <label class="form-label">Select Bank</label>
+                <select class="form-control">
+                  <option>SBI – State Bank of India</option>
+                  <option>HDFC Bank</option>
+                  <option>ICICI Bank</option>
+                  <option>Axis Bank</option>
+                  <option>Kotak Mahindra Bank</option>
+                  <option>Punjab National Bank</option>
+                </select>
+              </div>
+            </div>
+
+            <button class="btn btn-success btn-lg btn-block mt-4" id="pay-now-btn" onclick="processPayment()">
+              💳 Proceed to Pay <span id="pay-btn-amount">₹500</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="pay-summary card">
+          <div class="card-body">
+            <h2 class="pay-methods-title">Payment Summary</h2>
+            <div class="summary-row"><span class="summary-label">Doctor</span><span class="summary-val" id="sum-doctor">Loading…</span></div>
+            <div class="summary-row"><span class="summary-label">Specialization</span><span class="summary-val" id="sum-spec">–</span></div>
+            <div class="summary-row"><span class="summary-label">Date</span><span class="summary-val" id="sum-date">–</span></div>
+            <div class="summary-row"><span class="summary-label">Time</span><span class="summary-val" id="sum-time">–</span></div>
+            <div class="summary-row"><span class="summary-label">Consultation Fee</span><span class="summary-val" id="sum-fee">–</span></div>
+            <div class="summary-row"><span class="summary-label">Platform Fee</span><span class="summary-val">₹0</span></div>
+            <div class="summary-total">
+              <span class="summary-total-label">Total Amount</span>
+              <span class="summary-total-val" id="sum-total">₹500</span>
+            </div>
+            <div style="margin-top:20px;padding:14px;background:var(--success-bg);border-radius:var(--r-md);">
+              <p style="font-size:0.85rem;color:#065f46;">🔒 Secured with 256-bit SSL encryption. Card details are never stored.</p>
+            </div>
+            <div style="margin-top:12px;padding:14px;background:#e0f2fe;border-radius:var(--r-md);">
+              <p style="font-size:0.85rem;color:#075985;">📋 A confirmation SMS and email will be sent after payment.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payment History -->
+      <div class="card mt-4">
+        <div class="card-header">
+          <h2 class="card-title">🧾 Payment History</h2>
+        </div>
+        <div class="card-body" id="payment-history">
+          <div class="empty-state"><div class="emoji">⏳</div><h3>Loading…</h3></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/utils.js"></script>
+<script>
+let currentApptId = null;
+let currentAmount = 500;
+let selectedMethod = 'QR Code / UPI';
+
+(async () => {
+  const user = await MC.requireAuth('patient');
+  if (!user) return;
+  document.getElementById('nav-name').textContent = user.name;
+  document.getElementById('nav-avatar').textContent = user.initials;
+
+  const params = new URLSearchParams(location.search);
+  currentApptId = params.get('apptId');
+
+  if (currentApptId) {
+    try {
+      const { appointments } = await MC.get('/api/appointments');
+      const appt = appointments.find(a => a.id === currentApptId);
+      if (appt) {
+        currentAmount = appt.fee;
+        document.getElementById('sum-doctor').textContent = appt.doctor.name;
+        document.getElementById('sum-spec').textContent = appt.doctor.specialization;
+        const d = new Date(appt.date + 'T00:00:00');
+        document.getElementById('sum-date').textContent = d.toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' });
+        document.getElementById('sum-time').textContent = appt.time;
+        document.getElementById('sum-fee').textContent = `₹${appt.fee}`;
+        document.getElementById('sum-total').textContent = `₹${appt.fee}`;
+        document.getElementById('pay-btn-amount').textContent = `₹${appt.fee}`;
+        document.getElementById('qr-amount').textContent = `₹${appt.fee}`;
+      }
+    } catch {}
+  }
+
+  // Load history
+  try {
+    const { payments } = await MC.get('/api/payments');
+    const el = document.getElementById('payment-history');
+    if (payments.length === 0) {
+      el.innerHTML = `<div class="empty-state"><div class="emoji">🧾</div><h3>No payment history</h3></div>`;
+    } else {
+      el.innerHTML = payments.map(p => `
+        <div class="appt-item">
+          <div class="appt-avatar" style="background:linear-gradient(135deg,#10b981,#059669)">💳</div>
+          <div class="appt-info">
+            <div class="appt-name">${p.txnId}</div>
+            <div class="appt-detail">${p.method} &bull; ${MC.formatDate(p.date)}</div>
+          </div>
+          <div class="appt-meta">
+            <div class="appt-time font-bold text-primary">₹${p.amount}</div>
+            ${MC.renderBadge(p.status)}
+          </div>
+        </div>
+      `).join('');
+    }
+  } catch {}
+})();
+
+function selectPayMethod(el, method) {
+  document.querySelectorAll('.pay-option').forEach(o => o.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.pay-section').forEach(s => s.classList.remove('show'));
+  const sectionMap = { qr: 'sec-qr', credit: 'sec-card', debit: 'sec-card', upi: 'sec-upi', netbanking: 'sec-netbanking' };
+  const sec = document.getElementById(sectionMap[method]);
+  if (sec) sec.classList.add('show');
+  selectedMethod = el.querySelector('h4').textContent;
+}
+
+async function processPayment() {
+  if (!currentApptId) {
+    MC.toast('No appointment selected. Please book an appointment first.', 'warning');
+    setTimeout(() => window.location.href = '/appointment', 1500);
+    return;
+  }
+  MC.loading(true);
+  try {
+    // Simulate payment processing
+    await new Promise(r => setTimeout(r, 1500));
+    const { payment } = await MC.post('/api/payments', {
+      appointmentId: currentApptId,
+      amount: currentAmount,
+      method: selectedMethod
+    });
+    // Show success
+    document.getElementById('payment-form-area').style.display = 'none';
+    const sc = document.getElementById('pay-success-card');
+    sc.classList.add('show');
+    document.getElementById('txn-id').textContent = payment.txnId;
+    document.getElementById('txn-amount').textContent = `₹${payment.amount}`;
+    // Get appointment info
+    const { appointments } = await MC.get('/api/appointments');
+    const appt = appointments.find(a => a.id === currentApptId);
+    if (appt) {
+      document.getElementById('txn-doctor').textContent = appt.doctor.name;
+      const d = new Date(appt.date + 'T00:00:00');
+      document.getElementById('txn-datetime').textContent = `${d.toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'})} – ${appt.time}`;
+    }
+    MC.toast('Payment successful! 🎉', 'success');
+  } catch(e) {
+    MC.toast(e.message, 'error');
+  } finally { MC.loading(false); }
+}
+</script>
+</body>
+</html>
